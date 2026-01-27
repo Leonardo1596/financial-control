@@ -1,12 +1,15 @@
 import express from "express";
 import dotenv from "dotenv";
 import { connectDatabase } from "./config/database.js";
-
 dotenv.config();
-
 const app = express();
-
 app.use(express.json());
+
+// Import routes
+import authRoutes from "./routes/auth.routes.js";
+
+// Use routes
+app.use(authRoutes);
 
 // conecta no banco
 connectDatabase();
