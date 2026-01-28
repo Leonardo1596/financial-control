@@ -7,9 +7,13 @@ app.use(express.json());
 
 // Import routes
 import authRoutes from "./routes/auth.routes.js";
+import transactionRoutes from "./routes/transaction.routes.js";
+import uploadRoutes from "./routes/upload.routes.js";
 
 // Use routes
 app.use(authRoutes);
+app.use(transactionRoutes);
+app.use(uploadRoutes);
 
 // conecta no banco
 connectDatabase();
