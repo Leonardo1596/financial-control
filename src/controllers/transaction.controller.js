@@ -1,4 +1,5 @@
 import Transaction from "../models/TransactionModel.js";
+import mongoose from "mongoose";
 
 export const createTransaction = async (req, res) => {
   try {
@@ -49,6 +50,61 @@ export const deleteTransaction = async (req, res) => {
 
     return res.json({ message: "Transação removida" });
   } catch (err) {
+    return res.status(500).json({ message: "Erro interno" });
+  }
+};
+
+export const getSummary = async (req, res) => {
+  try {
+    const userId = new mongoose.Types.ObjectId(req.userId);
+
+    if (!userId) {
+      return res.status(401).json({ message: "Usuário não autenticado" });
+    }
+
+    const { month, year } = req.query;
+
+    const m = Number(month);
+    const y = Number(year);
+
+    const start = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0));
+    const end = new Date(Date.UTC(y, m, 0, 23, 59, 59));
+
+    const summary = await Transaction.aggregate([
+      {
+        $match: {
+          user: userId,
+          date: {
+            $gte: start,
+            $lte: end
+          }
+        }
+      },
+      {
+        $group: {
+          _id: "$type",
+          total: { $sum: "$amount" }
+        }
+      }
+    ]);
+
+    let income = 0;
+    let expense = 0;
+
+    summary.forEach(item => {
+      if (item._id === "income") income = item.total;
+      if (item._id === "expense") expense = item.total;
+    });
+
+    const balance = income - expense;
+
+    return res.json({
+      income,
+      expense,
+      balance
+    });
+  } catch (err) {
+    console.error(err);
     return res.status(500).json({ message: "Erro interno" });
   }
 };
