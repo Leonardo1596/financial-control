@@ -2,12 +2,15 @@ import fs from "fs";
 import csv from "csv-parser";
 import Transaction from "../models/TransactionModel.js";
 
-// Convert date strings (DD/MM/YYYY or DD-MM-YYYY) to Date
+// Parse Brazilian date with optional time
 function parseBrazilianDate(value) {
   if (!value || typeof value !== "string") return null;
 
-  const sep = value.includes("/") ? "/" : "-";
-  const parts = value.split(sep);
+  // Remove time if exists
+  const datePart = value.split(" ")[0];
+
+  const sep = datePart.includes("/") ? "/" : "-";
+  const parts = datePart.split(sep);
 
   if (parts.length !== 3) return null;
 
@@ -17,7 +20,7 @@ function parseBrazilianDate(value) {
   return isNaN(date.getTime()) ? null : date;
 }
 
-// Convert monetary values safely
+// Parse monetary values like 8.962,00
 function parseAmount(value) {
   if (value === undefined || value === null) return null;
 
@@ -25,10 +28,10 @@ function parseAmount(value) {
     .toString()
     .trim()
     .replace("R$", "")
-    .replace(",", "."); // only comma -> dot
+    .replace(/\./g, "") // remove thousand separator
+    .replace(",", "."); // decimal separator
 
   const amount = Number(normalized);
-
   return Number.isNaN(amount) ? null : amount;
 }
 
@@ -43,21 +46,6 @@ export async function importCSV(req, res) {
 
     if (!file) {
       return res.status(400).json({ message: "Arquivo não enviado" });
-    }
-
-    const { startDate, endDate } = req.body;
-
-    let start = null;
-    let end = null;
-
-    if (startDate) {
-      const d = new Date(`${startDate}T00:00:00Z`);
-      if (!isNaN(d.getTime())) start = d;
-    }
-
-    if (endDate) {
-      const d = new Date(`${endDate}T23:59:59Z`);
-      if (!isNaN(d.getTime())) end = d;
     }
 
     const transactionsToInsert = [];
@@ -77,19 +65,19 @@ export async function importCSV(req, res) {
             row.Valor || row.TRANSACTION_NET_AMOUNT || row.valor;
 
           const rawDesc =
-            row.Descrição || row.TRANSACTION_TYPE || row.descricao;
+            row.Descrição ||
+            row.TRANSACTION_TYPE ||
+            row.descricao ||
+            row.description;
 
           const date = parseBrazilianDate(rawDate);
           const amount = parseAmount(rawAmount);
 
           if (!date || amount === null || !rawDesc) return;
 
-          if (start && date < start) return;
-          if (end && date > end) return;
-
           transactionsToInsert.push({
             user: userId,
-            description: rawDesc,
+            description: rawDesc.trim(),
             amount: Math.abs(amount),
             type: amount >= 0 ? "income" : "expense",
             date,
@@ -111,12 +99,8 @@ export async function importCSV(req, res) {
     // Deduplication
     const existing = await Transaction.find({
       user: userId,
-      date: {
-        $in: transactionsToInsert.map((t) => t.date),
-      },
-      amount: {
-        $in: transactionsToInsert.map((t) => t.amount),
-      },
+      date: { $in: transactionsToInsert.map((t) => t.date) },
+      amount: { $in: transactionsToInsert.map((t) => t.amount) },
     }).select("date amount description");
 
     const existingSet = new Set(
