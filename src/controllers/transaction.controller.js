@@ -54,6 +54,24 @@ export const deleteTransaction = async (req, res) => {
   }
 };
 
+export const deleteAllTransactions = async (req, res) => {
+  try {
+    const userId = req.userId;
+
+    const result = await Transaction.deleteMany({ user: userId });
+
+    return res.status(200).json({
+      message: "Todas as transações foram deletadas",
+      deletedCount: result.deletedCount,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Erro ao deletar transações",
+      error: error.message,
+    });
+  }
+};
+
 export const getSummary = async (req, res) => {
   try {
     const userId = new mongoose.Types.ObjectId(req.userId);

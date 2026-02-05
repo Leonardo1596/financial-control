@@ -1,20 +1,21 @@
 import AccountPayable from "../models/AccountPayableModel.js";
 
-// 🔧 função interna pra calcular status
+// 🔧 calcula status automaticamente
 function calculateStatus(account) {
   if (account.status === "paga") return "paga";
 
   const today = new Date();
-  const dueDate = new Date(account.dueDate);
+  today.setHours(0, 0, 0, 0);
 
-  if (dueDate < today) {
-    return "atrasada";
-  }
+  const dueDate = new Date(account.dueDate);
+  dueDate.setHours(0, 0, 0, 0);
+
+  if (dueDate < today) return "atrasada";
 
   return "pendente";
 }
 
-// ✅ Criar conta a pagar
+// ✅ Criar conta(s) a pagar
 export async function create(req, res) {
   try {
     const {
@@ -23,58 +24,86 @@ export async function create(req, res) {
       dueDate,
       type,
       recurring,
-      category
+      category,
+      recurringMonths = 12
     } = req.body;
 
     if (!description || !amount || !dueDate) {
       return res.status(400).json({ error: "Campos obrigatórios faltando" });
     }
 
-    const account = await AccountPayable.create({
+    const baseDueDate = new Date(dueDate);
+    const accounts = [];
+
+    // conta principal
+    accounts.push({
       userId: req.userId,
       description,
       amount,
-      dueDate,
+      dueDate: baseDueDate,
       type: type || "fixa",
-      recurring: recurring || false,
+      recurring: !!recurring,
       category: category || "Geral"
     });
 
-    return res.status(201).json(account);
+    // 🔁 contas futuras
+    if (recurring) {
+      for (let i = 1; i < recurringMonths; i++) {
+        const nextDate = new Date(baseDueDate);
+        nextDate.setMonth(baseDueDate.getMonth() + i);
+
+        accounts.push({
+          userId: req.userId,
+          description,
+          amount,
+          dueDate: nextDate,
+          type: type || "fixa",
+          recurring: true,
+          category: category || "Geral"
+        });
+      }
+    }
+
+    const created = await AccountPayable.insertMany(accounts);
+
+    return res.status(201).json({
+      message: "Conta(s) criada(s) com sucesso",
+      created: created.length
+    });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: "Erro ao criar conta a pagar" });
   }
 }
 
-// 📋 Listar contas a pagar
+// 📋 Listar contas
 export async function list(req, res) {
   try {
     const accounts = await AccountPayable.find({
       userId: req.userId
     }).sort({ dueDate: 1 });
 
-    const updatedAccounts = await Promise.all(
-      accounts.map(async account => {
-        const newStatus = calculateStatus(account);
+    const updated = await Promise.all(
+      accounts.map(async acc => {
+        const newStatus = calculateStatus(acc);
 
-        if (newStatus !== account.status) {
-          account.status = newStatus;
-          await account.save();
+        if (newStatus !== acc.status) {
+          acc.status = newStatus;
+          await acc.save();
         }
 
-        return account;
+        return acc;
       })
     );
 
-    return res.json(updatedAccounts);
+    return res.json(updated);
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ error: "Erro ao listar contas a pagar" });
+    return res.status(500).json({ error: "Erro ao listar contas" });
   }
 }
 
-// 🔍 Buscar conta por ID
+// 🔍 Buscar por ID
 export async function getById(req, res) {
   try {
     const { id } = req.params;
@@ -131,7 +160,6 @@ export async function update(req, res) {
     });
 
     account.status = calculateStatus(account);
-
     await account.save();
 
     return res.json(account);
@@ -141,7 +169,7 @@ export async function update(req, res) {
   }
 }
 
-// 💸 Marcar como paga
+// 💸 Marcar como paga (SEM criar duplicada)
 export async function pay(req, res) {
   try {
     const { id } = req.params;
@@ -163,22 +191,6 @@ export async function pay(req, res) {
     account.paidAt = new Date();
 
     await account.save();
-
-    // 🔁 cria próxima se for recorrente
-    if (account.recurring) {
-      const nextDueDate = new Date(account.dueDate);
-      nextDueDate.setMonth(nextDueDate.getMonth() + 1);
-
-      await AccountPayable.create({
-        userId: account.userId,
-        description: account.description,
-        amount: account.amount,
-        dueDate: nextDueDate,
-        type: account.type,
-        recurring: true,
-        category: account.category
-      });
-    }
 
     return res.json(account);
   } catch (error) {

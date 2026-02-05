@@ -71,7 +71,7 @@ export async function importCSV(req, res) {
             row.description;
 
           const date = parseBrazilianDate(rawDate);
-          const amount = parseAmount(rawAmount);
+          const amount = parseAmount(rawAmount) / 100;
 
           if (!date || amount === null || !rawDesc) return;
 
