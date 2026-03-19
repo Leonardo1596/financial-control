@@ -2,34 +2,52 @@ import fs from "fs";
 import csv from "csv-parser";
 import Transaction from "../models/TransactionModel.js";
 
-// Parse Brazilian date with optional time
+/**
+ * Normaliza keys do CSV
+ */
+function normalizeKey(key) {
+  return key
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\uFEFF/g, "")
+    .trim();
+}
+
+/**
+ * Parse de data BR (DD/MM/YYYY ou DD/MM/YY)
+ */
 function parseBrazilianDate(value) {
   if (!value || typeof value !== "string") return null;
 
-  // Remove time if exists
   const datePart = value.split(" ")[0];
-
-  const sep = datePart.includes("/") ? "/" : "-";
-  const parts = datePart.split(sep);
+  const parts = datePart.split(/[\/-]/);
 
   if (parts.length !== 3) return null;
 
-  const [day, month, year] = parts;
+  let [day, month, year] = parts;
 
-  const date = new Date(`${year}-${month}-${day}T12:00:00Z`);
+  if (year.length === 2) {
+    year = `20${year}`;
+  }
+
+  const date = new Date(Number(year), Number(month) - 1, Number(day));
   return isNaN(date.getTime()) ? null : date;
 }
 
-// Parse monetary values like 8.962,00
+/**
+ * Parse de valor monetário (R$, vírgula, etc)
+ */
 function parseAmount(value) {
   if (value === undefined || value === null) return null;
 
-  const normalized = value
-    .toString()
-    .trim()
+  let normalized = value.toString().trim();
+
+  normalized = normalized
     .replace("R$", "")
-    .replace(/\./g, "") // remove thousand separator
-    .replace(",", "."); // decimal separator
+    .replace(/\s/g, "")
+    .replace(/\./g, "")
+    .replace(",", ".");
 
   const amount = Number(normalized);
   return Number.isNaN(amount) ? null : amount;
@@ -50,36 +68,42 @@ export async function importCSV(req, res) {
 
     const transactionsToInsert = [];
 
+    // 🔥 Detecta separador pelo conteúdo (não pelo nome 🤡)
+    const fileContent = fs.readFileSync(file.path, "utf8");
+    const separator = fileContent.includes(";") ? ";" : ",";
+
     await new Promise((resolve, reject) => {
       fs.createReadStream(file.path)
-        .pipe(
-          csv({
-            separator: file.originalname.includes(";") ? ";" : ",",
-          })
-        )
+        .pipe(csv({ separator }))
         .on("data", (row) => {
+          // 🔥 normaliza keys
+          const normalizedRow = {};
+          for (const key in row) {
+            normalizedRow[normalizeKey(key)] = row[key];
+          }
+
           const rawDate =
-            row.Data || row.RELEASE_DATE || row.date || row.data;
+            normalizedRow["data"] ||
+            normalizedRow["release_date"];
 
           const rawAmount =
-            row.Valor || row.TRANSACTION_NET_AMOUNT || row.valor;
+            normalizedRow["valor"] ||
+            normalizedRow["transaction_net_amount"];
 
           const rawDesc =
-            row.Descrição ||
-            row.TRANSACTION_TYPE ||
-            row.descricao ||
-            row.description;
+            normalizedRow["descricao"] ||
+            normalizedRow["transaction_type"];
 
           const date = parseBrazilianDate(rawDate);
-          const amount = parseAmount(rawAmount) / 100;
+          const amount = parseAmount(rawAmount);
 
           if (!date || amount === null || !rawDesc) return;
 
           transactionsToInsert.push({
             user: userId,
             description: rawDesc.trim(),
-            amount: Math.abs(amount),
-            type: amount >= 0 ? "income" : "expense",
+            amount: Math.abs(amount), // 🔥 SEM dividir por 100
+            type: amount < 0 ? "expense" : "income",
             date,
           });
         })
@@ -96,7 +120,7 @@ export async function importCSV(req, res) {
       });
     }
 
-    // Deduplication
+    // 🔥 Deduplicação
     const existing = await Transaction.find({
       user: userId,
       date: { $in: transactionsToInsert.map((t) => t.date) },

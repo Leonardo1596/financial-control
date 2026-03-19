@@ -11,17 +11,16 @@ function parseAmount(raw) {
 
   let value = raw.toString().trim();
 
-  // remove espaços e símbolos
-  value = value.replace(/\s/g, "");
+  // remove moeda e espaços
+  value = value.replace("R$", "").replace(/\s/g, "");
 
   // ponto + vírgula
   if (value.includes(".") && value.includes(",")) {
-    // BR 1.234,56
     if (value.lastIndexOf(",") > value.lastIndexOf(".")) {
+      // BR: 1.234,56
       value = value.replace(/\./g, "").replace(",", ".");
-    } 
-    // US 1,234.56
-    else {
+    } else {
+      // US: 1,234.56
       value = value.replace(/,/g, "");
     }
   }
@@ -35,7 +34,7 @@ function parseAmount(raw) {
 }
 
 /**
- * Parse de datas DD/MM/YYYY
+ * Parse de datas (DD/MM/YYYY ou DD/MM/YY)
  */
 function parseDate(str) {
   if (!str) return null;
@@ -51,7 +50,11 @@ function parseDate(str) {
     return null;
   }
 
-  // força data sem timezone bugado
+  // ajusta ano curto (Rico)
+  if (y.length === 2) {
+    y = `20${y}`;
+  }
+
   return new Date(Number(y), Number(m) - 1, Number(d));
 }
 
@@ -91,7 +94,7 @@ export const importCsv = (path, userId) => {
          * NUBANK
          * =========
          */
-        if (row["Valor"] && row["Data"]) {
+        if (row["Valor"] && row["Data"] && row["Descrição"]) {
           const amount = parseAmount(row["Valor"]);
           const date = parseDate(row["Data"]);
 
@@ -100,7 +103,7 @@ export const importCsv = (path, userId) => {
           transactions.push({
             user: userId,
             description: row["Descrição"]?.trim(),
-            amount: Math.abs(amount) * 100, // EM REAIS
+            amount: Math.abs(amount) * 100,
             type: amount < 0 ? "expense" : "income",
             date,
             externalId: row["Identificador"],
@@ -124,13 +127,42 @@ export const importCsv = (path, userId) => {
           transactions.push({
             user: userId,
             description: row["TRANSACTION_TYPE"]?.trim(),
-            amount: Math.abs(amount), // EM REAIS
+            amount: Math.abs(amount),
             type: amount < 0 ? "expense" : "income",
             date,
             externalId: row["REFERENCE_ID"],
             source: "mercadopago",
           });
+
+          return;
         }
+
+        /**
+         * =========
+         * RICO (XP)
+         * =========
+         */
+        if (row["Valor"] && row["Data"] && row["Descricao"]) {
+          const amount = parseAmount(row["Valor"]);
+          const date = parseDate(row["Data"]);
+
+          if (amount === null || !date) return;
+
+          const description = row["Descricao"]?.trim();
+
+          transactions.push({
+            user: userId,
+            description,
+            amount: Math.abs(amount) * 100,
+            type: amount < 0 ? "expense" : "income",
+            date,
+            externalId: `${row["Data"]}-${row["Hora"]}-${description}`,
+            source: "rico",
+          });
+
+          return;
+        }
+
       })
       .on("end", async () => {
         try {
