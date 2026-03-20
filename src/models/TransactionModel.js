@@ -28,7 +28,12 @@ const transactionSchema = new mongoose.Schema(
     source: {
       type: String,
       enum: ["nubank", "mercadopago", "manual", "ofx"]
-    }
+    },
+    accountId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Account',
+    required: true
+  }
   },
   { timestamps: true }
 );

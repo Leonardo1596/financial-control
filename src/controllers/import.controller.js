@@ -3,9 +3,6 @@ import csv from "csv-parser";
 import { Readable } from "stream";
 import Transaction from "../models/TransactionModel.js";
 
-/**
- * Normaliza keys do CSV
- */
 function normalizeKey(key) {
   return key
     .toLowerCase()
@@ -15,9 +12,6 @@ function normalizeKey(key) {
     .trim();
 }
 
-/**
- * Remove lixo do Mercado Pago
- */
 function normalizeCsvContent(content) {
   const lines = content.split("\n");
 
@@ -32,9 +26,6 @@ function normalizeCsvContent(content) {
   return content;
 }
 
-/**
- * Parse de data BR (DD/MM/YYYY ou DD/MM/YY)
- */
 function parseBrazilianDate(value) {
   if (!value || typeof value !== "string") return null;
 
@@ -53,34 +44,26 @@ function parseBrazilianDate(value) {
   return isNaN(date.getTime()) ? null : date;
 }
 
-/**
- * Parse de valor monetário (VERSÃO FINAL CORRETA)
- */
 function parseAmount(value) {
   if (value === undefined || value === null) return null;
 
   let normalized = value.toString().trim();
 
-  // remove R$ e espaços
   normalized = normalized.replace("R$", "").replace(/\s/g, "");
 
   const hasComma = normalized.includes(",");
   const hasDot = normalized.includes(".");
 
-  // 🔥 Caso BR: 1.234,56
   if (hasComma) {
     normalized = normalized
-      .replace(/\./g, "") // remove milhar
-      .replace(",", "."); // decimal
+      .replace(/\./g, "")
+      .replace(",", ".");
   }
-
-  // 🔥 Caso US: -11.50 → NÃO mexe
 
   let amount = Number(normalized);
 
   if (Number.isNaN(amount)) return null;
 
-  // 🔥 Caso sem decimal: 1150 → 11.50
   if (!hasComma && !hasDot) {
     amount = amount / 100;
   }
@@ -92,6 +75,7 @@ export async function importCSV(req, res) {
   try {
     const userId = req.userId;
     const file = req.file;
+    const { accountId } = req.body;
 
     if (!userId) {
       return res.status(401).json({ message: "Usuário não autenticado" });
@@ -101,13 +85,15 @@ export async function importCSV(req, res) {
       return res.status(400).json({ message: "Arquivo não enviado" });
     }
 
+    if (!accountId) {
+      return res.status(400).json({ message: "Conta não informada" });
+    }
+
     const transactionsToInsert = [];
 
-    // 🔥 lê e limpa CSV
     let fileContent = fs.readFileSync(file.path, "utf8");
     fileContent = normalizeCsvContent(fileContent);
 
-    // 🔥 detecta separador
     const separator = fileContent.includes(";") ? ";" : ",";
 
     await new Promise((resolve, reject) => {
@@ -134,10 +120,12 @@ export async function importCSV(req, res) {
 
           const date = parseBrazilianDate(rawDate);
           const amount = parseAmount(rawAmount);
+
           if (!date || amount === null || !rawDesc) return;
 
           transactionsToInsert.push({
             user: userId,
+            accountId,
             description: rawDesc.trim(),
             amount: Math.abs(amount),
             type: amount < 0 ? "expense" : "income",
@@ -157,22 +145,23 @@ export async function importCSV(req, res) {
       });
     }
 
-    // 🔥 Deduplicação
+    // 🔥 Deduplicação COM accountId
     const existing = await Transaction.find({
       user: userId,
+      accountId,
       date: { $in: transactionsToInsert.map((t) => t.date) },
       amount: { $in: transactionsToInsert.map((t) => t.amount) },
-    }).select("date amount description");
+    }).select("date amount description accountId");
 
     const existingSet = new Set(
       existing.map(
         (t) =>
-          `${t.date.toISOString()}-${t.amount}-${t.description}`
+          `${t.date.toISOString()}-${t.amount}-${t.description}-${t.accountId}`
       )
     );
 
     const uniqueTransactions = transactionsToInsert.filter((t) => {
-      const key = `${t.date.toISOString()}-${t.amount}-${t.description}`;
+      const key = `${t.date.toISOString()}-${t.amount}-${t.description}-${t.accountId}`;
       return !existingSet.has(key);
     });
 

@@ -3,9 +3,9 @@ import mongoose from "mongoose";
 
 export const createTransaction = async (req, res) => {
   try {
-    const { type, description, amount, date } = req.body;
+    const { type, description, amount, date, accountId } = req.body;
 
-    if (!type || !description || !amount) {
+    if (!type || !description || !amount || !accountId) {
       return res.status(400).json({ message: "Dados incompletos" });
     }
 
@@ -14,6 +14,7 @@ export const createTransaction = async (req, res) => {
       type,
       description,
       amount,
+      accountId,
       date
     });
 
