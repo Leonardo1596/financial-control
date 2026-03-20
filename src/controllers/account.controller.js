@@ -42,3 +42,16 @@ export const deleteAccount = async (req, res) => {
     return res.status(500).json({ message: "Erro interno" });
   }
 }
+
+
+export const listAccounts = async (req, res) => {
+  try {
+    const accounts = await AccountModel.find({
+      userId: req.userId
+    }).sort({ name: 1 });
+
+    return res.json(accounts);
+  } catch (err) {
+    return res.status(500).json({ message: "Erro interno" });
+  }
+};
