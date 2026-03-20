@@ -4,178 +4,189 @@ import { Readable } from "stream";
 import Transaction from "../models/TransactionModel.js";
 
 /**
- * Parse seguro de valores monetários
+ * Normaliza keys do CSV
  */
-function parseAmount(raw) {
-  if (!raw) return null;
-
-  let value = raw.toString().trim();
-
-  // remove moeda e espaços
-  value = value.replace("R$", "").replace(/\s/g, "");
-
-  // ponto + vírgula
-  if (value.includes(".") && value.includes(",")) {
-    if (value.lastIndexOf(",") > value.lastIndexOf(".")) {
-      // BR: 1.234,56
-      value = value.replace(/\./g, "").replace(",", ".");
-    } else {
-      // US: 1,234.56
-      value = value.replace(/,/g, "");
-    }
-  }
-  // só vírgula
-  else if (value.includes(",")) {
-    value = value.replace(",", ".");
-  }
-
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-}
-
-/**
- * Parse de datas (DD/MM/YYYY ou DD/MM/YY)
- */
-function parseDate(str) {
-  if (!str) return null;
-
-  const value = str.trim();
-  let d, m, y;
-
-  if (value.includes("/")) {
-    [d, m, y] = value.split("/");
-  } else if (value.includes("-")) {
-    [d, m, y] = value.split("-");
-  } else {
-    return null;
-  }
-
-  // ajusta ano curto (Rico)
-  if (y.length === 2) {
-    y = `20${y}`;
-  }
-
-  return new Date(Number(y), Number(m) - 1, Number(d));
+function normalizeKey(key) {
+  return key
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\uFEFF/g, "")
+    .trim();
 }
 
 /**
  * Remove lixo do Mercado Pago
  */
-function normalizeCsv(path) {
-  const content = fs.readFileSync(path, "utf8");
+function normalizeCsvContent(content) {
+  const lines = content.split("\n");
 
-  if (content.includes("RELEASE_DATE")) {
-    const lines = content.split("\n");
-    const startIndex = lines.findIndex(line =>
-      line.startsWith("RELEASE_DATE")
-    );
+  const startIndex = lines.findIndex(line =>
+    line.includes("RELEASE_DATE")
+  );
 
-    if (startIndex !== -1) {
-      return lines.slice(startIndex).join("\n");
-    }
+  if (startIndex !== -1) {
+    return lines.slice(startIndex).join("\n");
   }
 
   return content;
 }
 
-export const importCsv = (path, userId) => {
-  return new Promise((resolve, reject) => {
-    const transactions = [];
+/**
+ * Parse de data BR (DD/MM/YYYY ou DD/MM/YY)
+ */
+function parseBrazilianDate(value) {
+  if (!value || typeof value !== "string") return null;
 
-    const normalized = normalizeCsv(path);
-    const separator = normalized.split("\n")[0].includes(";") ? ";" : ",";
+  const datePart = value.split(" ")[0];
+  const parts = datePart.split(/[\/-]/);
 
-    Readable.from(normalized)
-      .pipe(csv({ separator }))
-      .on("data", (row) => {
+  if (parts.length !== 3) return null;
 
-        /**
-         * =========
-         * NUBANK
-         * =========
-         */
-        if (row["Valor"] && row["Data"] && row["Descrição"]) {
-          const amount = parseAmount(row["Valor"]);
-          const date = parseDate(row["Data"]);
+  let [day, month, year] = parts;
 
-          if (amount === null || !date) return;
+  if (year.length === 2) {
+    year = `20${year}`;
+  }
 
-          transactions.push({
+  const date = new Date(Number(year), Number(month) - 1, Number(day));
+  return isNaN(date.getTime()) ? null : date;
+}
+
+/**
+ * Parse de valor monetário (VERSÃO FINAL INTELIGENTE)
+ */
+function parseAmount(value) {
+  if (value === undefined || value === null) return null;
+
+  let normalized = value.toString().trim();
+
+  // remove R$ e espaços
+  normalized = normalized.replace("R$", "").replace(/\s/g, "");
+
+  const hasComma = normalized.includes(",");
+  const hasDot = normalized.includes(".");
+
+  // 🔥 formato BR (1.234,56)
+  if (hasComma) {
+    normalized = normalized
+      .replace(/\./g, "") // remove milhar
+      .replace(",", "."); // decimal
+  }
+
+  let amount = Number(normalized);
+
+  if (Number.isNaN(amount)) return null;
+
+  // 🔥 se NÃO tem decimal → centavos
+  if (!hasComma && !hasDot) {
+    amount = amount / 100;
+  }
+
+  return amount;
+}
+
+export async function importCSV(req, res) {
+  try {
+    const userId = req.userId;
+    const file = req.file;
+
+    if (!userId) {
+      return res.status(401).json({ message: "Usuário não autenticado" });
+    }
+
+    if (!file) {
+      return res.status(400).json({ message: "Arquivo não enviado" });
+    }
+
+    const transactionsToInsert = [];
+
+    // 🔥 lê e limpa CSV
+    let fileContent = fs.readFileSync(file.path, "utf8");
+    fileContent = normalizeCsvContent(fileContent);
+
+    // 🔥 detecta separador
+    const separator = fileContent.includes(";") ? ";" : ",";
+
+    await new Promise((resolve, reject) => {
+      Readable.from(fileContent)
+        .pipe(csv({ separator }))
+        .on("data", (row) => {
+          const normalizedRow = {};
+
+          for (const key in row) {
+            normalizedRow[normalizeKey(key)] = row[key];
+          }
+
+          const rawDate =
+            normalizedRow["data"] ||
+            normalizedRow["release_date"];
+
+          const rawAmount =
+            normalizedRow["valor"] ||
+            normalizedRow["transaction_net_amount"];
+
+          const rawDesc =
+            normalizedRow["descricao"] ||
+            normalizedRow["transaction_type"];
+
+          const date = parseBrazilianDate(rawDate);
+          const amount = parseAmount(rawAmount);
+
+          if (!date || amount === null || !rawDesc) return;
+
+          transactionsToInsert.push({
             user: userId,
-            description: row["Descrição"]?.trim(),
-            amount: Math.abs(amount) * 100,
-            type: amount < 0 ? "expense" : "income",
-            date,
-            externalId: row["Identificador"],
-            source: "nubank",
-          });
-
-          return;
-        }
-
-        /**
-         * =========
-         * MERCADO PAGO
-         * =========
-         */
-        if (row["TRANSACTION_NET_AMOUNT"] && row["RELEASE_DATE"]) {
-          const amount = parseAmount(row["TRANSACTION_NET_AMOUNT"]);
-          const date = parseDate(row["RELEASE_DATE"]);
-
-          if (amount === null || !date) return;
-
-          transactions.push({
-            user: userId,
-            description: row["TRANSACTION_TYPE"]?.trim(),
+            description: rawDesc.trim(),
             amount: Math.abs(amount),
             type: amount < 0 ? "expense" : "income",
             date,
-            externalId: row["REFERENCE_ID"],
-            source: "mercadopago",
           });
+        })
+        .on("end", resolve)
+        .on("error", reject);
+    });
 
-          return;
-        }
+    fs.unlinkSync(file.path);
 
-        /**
-         * =========
-         * RICO (XP)
-         * =========
-         */
-        if (row["Valor"] && row["Data"] && row["Descricao"]) {
-          const amount = parseAmount(row["Valor"]);
-          const date = parseDate(row["Data"]);
+    if (transactionsToInsert.length === 0) {
+      return res.json({
+        message: "Nenhuma transação válida encontrada",
+        total: 0,
+      });
+    }
 
-          if (amount === null || !date) return;
+    // 🔥 Deduplicação
+    const existing = await Transaction.find({
+      user: userId,
+      date: { $in: transactionsToInsert.map((t) => t.date) },
+      amount: { $in: transactionsToInsert.map((t) => t.amount) },
+    }).select("date amount description");
 
-          const description = row["Descricao"]?.trim();
+    const existingSet = new Set(
+      existing.map(
+        (t) =>
+          `${t.date.toISOString()}-${t.amount}-${t.description}`
+      )
+    );
 
-          transactions.push({
-            user: userId,
-            description,
-            amount: Math.abs(amount) * 100,
-            type: amount < 0 ? "expense" : "income",
-            date,
-            externalId: `${row["Data"]}-${row["Hora"]}-${description}`,
-            source: "rico",
-          });
+    const uniqueTransactions = transactionsToInsert.filter((t) => {
+      const key = `${t.date.toISOString()}-${t.amount}-${t.description}`;
+      return !existingSet.has(key);
+    });
 
-          return;
-        }
+    if (uniqueTransactions.length > 0) {
+      await Transaction.insertMany(uniqueTransactions);
+    }
 
-      })
-      .on("end", async () => {
-        try {
-          if (transactions.length) {
-            await Transaction.insertMany(transactions);
-          }
-
-          fs.unlinkSync(path);
-          resolve(transactions.length);
-        } catch (err) {
-          reject(err);
-        }
-      })
-      .on("error", reject);
-  });
-};
+    return res.json({
+      message: "Importação concluída",
+      total: uniqueTransactions.length,
+    });
+  } catch (err) {
+    console.error("Error importing CSV:", err);
+    return res.status(500).json({
+      message: "Erro ao importar arquivo",
+    });
+  }
+}

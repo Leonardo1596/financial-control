@@ -1,5 +1,6 @@
 import fs from "fs";
 import csv from "csv-parser";
+import { Readable } from "stream";
 import Transaction from "../models/TransactionModel.js";
 
 /**
@@ -12,6 +13,23 @@ function normalizeKey(key) {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/\uFEFF/g, "")
     .trim();
+}
+
+/**
+ * Remove lixo do Mercado Pago
+ */
+function normalizeCsvContent(content) {
+  const lines = content.split("\n");
+
+  const startIndex = lines.findIndex(line =>
+    line.includes("RELEASE_DATE")
+  );
+
+  if (startIndex !== -1) {
+    return lines.slice(startIndex).join("\n");
+  }
+
+  return content;
 }
 
 /**
@@ -36,21 +54,38 @@ function parseBrazilianDate(value) {
 }
 
 /**
- * Parse de valor monetário (R$, vírgula, etc)
+ * Parse de valor monetário (VERSÃO FINAL CORRETA)
  */
 function parseAmount(value) {
   if (value === undefined || value === null) return null;
 
   let normalized = value.toString().trim();
 
-  normalized = normalized
-    .replace("R$", "")
-    .replace(/\s/g, "")
-    .replace(/\./g, "")
-    .replace(",", ".");
+  // remove R$ e espaços
+  normalized = normalized.replace("R$", "").replace(/\s/g, "");
 
-  const amount = Number(normalized);
-  return Number.isNaN(amount) ? null : amount;
+  const hasComma = normalized.includes(",");
+  const hasDot = normalized.includes(".");
+
+  // 🔥 Caso BR: 1.234,56
+  if (hasComma) {
+    normalized = normalized
+      .replace(/\./g, "") // remove milhar
+      .replace(",", "."); // decimal
+  }
+
+  // 🔥 Caso US: -11.50 → NÃO mexe
+
+  let amount = Number(normalized);
+
+  if (Number.isNaN(amount)) return null;
+
+  // 🔥 Caso sem decimal: 1150 → 11.50
+  if (!hasComma && !hasDot) {
+    amount = amount / 100;
+  }
+
+  return amount;
 }
 
 export async function importCSV(req, res) {
@@ -68,16 +103,19 @@ export async function importCSV(req, res) {
 
     const transactionsToInsert = [];
 
-    // 🔥 Detecta separador pelo conteúdo (não pelo nome 🤡)
-    const fileContent = fs.readFileSync(file.path, "utf8");
+    // 🔥 lê e limpa CSV
+    let fileContent = fs.readFileSync(file.path, "utf8");
+    fileContent = normalizeCsvContent(fileContent);
+
+    // 🔥 detecta separador
     const separator = fileContent.includes(";") ? ";" : ",";
 
     await new Promise((resolve, reject) => {
-      fs.createReadStream(file.path)
+      Readable.from(fileContent)
         .pipe(csv({ separator }))
         .on("data", (row) => {
-          // 🔥 normaliza keys
           const normalizedRow = {};
+
           for (const key in row) {
             normalizedRow[normalizeKey(key)] = row[key];
           }
@@ -96,13 +134,12 @@ export async function importCSV(req, res) {
 
           const date = parseBrazilianDate(rawDate);
           const amount = parseAmount(rawAmount);
-
           if (!date || amount === null || !rawDesc) return;
 
           transactionsToInsert.push({
             user: userId,
             description: rawDesc.trim(),
-            amount: Math.abs(amount), // 🔥 SEM dividir por 100
+            amount: Math.abs(amount),
             type: amount < 0 ? "expense" : "income",
             date,
           });
