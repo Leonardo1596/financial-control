@@ -75,13 +75,13 @@ export const deleteAllTransactions = async (req, res) => {
 
 export const getSummary = async (req, res) => {
   try {
-    const userId = new mongoose.Types.ObjectId(req.userId);
-
-    if (!userId) {
+    if (!req.userId) {
       return res.status(401).json({ message: "Usuário não autenticado" });
     }
 
-    const { month, year } = req.query;
+    const userId = new mongoose.Types.ObjectId(req.userId);
+
+    const { month, year, accountId } = req.query;
 
     const m = Number(month);
     const y = Number(year);
@@ -89,20 +89,36 @@ export const getSummary = async (req, res) => {
     const start = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0));
     const end = new Date(Date.UTC(y, m, 0, 23, 59, 59));
 
+    // 👇 match dinâmico
+    const match = {
+      user: userId,
+      date: {
+        $gte: start,
+        $lte: end
+      }
+    };
+
+    // 👇 se vier accountId, filtra
+    if (accountId) {
+      match.accountId = new mongoose.Types.ObjectId(accountId);
+    }
+
     const summary = await Transaction.aggregate([
       {
-        $match: {
-          user: userId,
-          date: {
-            $gte: start,
-            $lte: end
-          }
-        }
+        $match: match
       },
       {
         $group: {
           _id: "$type",
-          total: { $sum: "$amount" }
+          total: {
+            $sum: {
+              $cond: [
+                { $eq: ["$type", "expense"] },
+                { $multiply: ["$amount", -1] },
+                "$amount"
+              ]
+            }
+          }
         }
       }
     ]);
@@ -112,7 +128,7 @@ export const getSummary = async (req, res) => {
 
     summary.forEach(item => {
       if (item._id === "income") income = item.total;
-      if (item._id === "expense") expense = item.total;
+      if (item._id === "expense") expense = Math.abs(item.total); // 👈 mantém bonito pro frontend
     });
 
     const balance = income - expense;
@@ -122,6 +138,7 @@ export const getSummary = async (req, res) => {
       expense,
       balance
     });
+
   } catch (err) {
     console.error(err);
     return res.status(500).json({ message: "Erro interno" });
