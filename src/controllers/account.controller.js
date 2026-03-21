@@ -44,17 +44,30 @@ export const deleteAccount = async (req, res) => {
   }
 };
 
-// 🔥 LIST ACCOUNTS COM SALDO REAL
 export const listAccounts = async (req, res) => {
   try {
     const userId = req.userId;
     const userObjectId = new mongoose.Types.ObjectId(userId);
 
+    const { month, year } = req.query;
+
+    const m = Number(month);
+    const y = Number(year);
+
+    const start = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0));
+    const end = new Date(Date.UTC(y, m, 0, 23, 59, 59));
+
     const accounts = await AccountModel.find({ userId }).sort({ name: 1 });
 
     const balances = await Transaction.aggregate([
       {
-        $match: { user: userObjectId }
+        $match: {
+          user: userObjectId,
+          date: {
+            $gte: start,
+            $lte: end
+          }
+        }
       },
       {
         $group: {
@@ -82,11 +95,12 @@ export const listAccounts = async (req, res) => {
 
       return {
         ...acc.toObject(),
-        balance: acc.balance + calculatedBalance
+        balance: calculatedBalance // 👈 agora NÃO soma com o acumulado antigo
       };
     });
 
     return res.json(accountsWithBalance);
+
   } catch (err) {
     console.error(err);
     return res.status(500).json({ message: "Erro interno" });
