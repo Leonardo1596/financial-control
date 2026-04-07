@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { closeMonth } from "../controllers/monthlyRecord.controller.js";
+import { closeMonth, getMonthlySummary } from "../controllers/monthlyRecord.controller.js";
 import { authMiddleware } from "../middlewares/authMiddleware.js";
 
 const router = Router();
@@ -9,5 +9,11 @@ router.post(
   authMiddleware,
   closeMonth
 );
+router.get(
+  "/records/monthly-summary",
+  authMiddleware,
+  getMonthlySummary
+);
+
 
 export default router;

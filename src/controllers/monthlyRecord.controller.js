@@ -102,3 +102,52 @@ export async function closeMonth(req, res) {
     });
   }
 }
+
+export async function getMonthlySummary(req, res) {
+  try {
+    const userId = req.userId;
+    const { month, year } = req.query;
+
+    if (!userId) {
+      return res.status(401).json({
+        message: "Usuário não autenticado",
+      });
+    }
+
+    if (!month || !year) {
+      return res.status(400).json({
+        message: "Mês e ano são obrigatórios",
+      });
+    }
+
+    const m = Number(month);
+    const y = Number(year);
+
+    if (m < 1 || m > 12 || y < 2000) {
+      return res.status(400).json({
+        message: "Período inválido",
+      });
+    }
+
+    const summary = await MonthlySummary.findOne({
+      user: userId,
+      month: m,
+      year: y,
+    });
+
+    if (!summary) {
+      return res.status(404).json({
+        message: "Resumo mensal não encontrado para este período",
+      });
+    }
+
+    return res.json({
+      summary,
+    });
+  } catch (err) {
+    console.error("Error fetching monthly summary:", err);
+    return res.status(500).json({
+      message: "Erro ao buscar o resumo mensal",
+    });
+  }
+}

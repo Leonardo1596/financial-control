@@ -1,4 +1,5 @@
 import Transaction from "../models/TransactionModel.js";
+import MonthlySummary from "../models/MonthlySummaryModel.js";
 import mongoose from "mongoose";
 
 export const createTransaction = async (req, res) => {
@@ -80,8 +81,11 @@ export const getSummary = async (req, res) => {
     }
 
     const userId = new mongoose.Types.ObjectId(req.userId);
-
     const { month, year, accountId } = req.query;
+
+    if (!month || !year) {
+      return res.status(400).json({ message: "Mês e ano são obrigatórios" });
+    }
 
     const m = Number(month);
     const y = Number(year);
@@ -89,24 +93,17 @@ export const getSummary = async (req, res) => {
     const start = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0));
     const end = new Date(Date.UTC(y, m, 0, 23, 59, 59));
 
-    // 👇 match dinâmico
     const match = {
       user: userId,
-      date: {
-        $gte: start,
-        $lte: end
-      }
+      date: { $gte: start, $lte: end }
     };
 
-    // 👇 se vier accountId, filtra
     if (accountId) {
       match.accountId = new mongoose.Types.ObjectId(accountId);
     }
 
-    const summary = await Transaction.aggregate([
-      {
-        $match: match
-      },
+    const result = await Transaction.aggregate([
+      { $match: match },
       {
         $group: {
           _id: "$type",
@@ -126,17 +123,31 @@ export const getSummary = async (req, res) => {
     let income = 0;
     let expense = 0;
 
-    summary.forEach(item => {
+    result.forEach(item => {
       if (item._id === "income") income = item.total;
-      if (item._id === "expense") expense = Math.abs(item.total); // 👈 mantém bonito pro frontend
+      if (item._id === "expense") expense = Math.abs(item.total);
     });
 
-    const balance = income - expense;
+    // 🔥 saldo anterior
+    const prevMonth = m === 1 ? 12 : m - 1;
+    const prevYear = m === 1 ? y - 1 : y;
+
+    const previousSummary = await MonthlySummary.findOne({
+      user: userId,
+      month: prevMonth,
+      year: prevYear,
+      ...(accountId && { account: accountId })
+    });
+
+    const previousBalance = previousSummary?.balance || 0;
+
+    const finalBalance = previousBalance + (income - expense);
 
     return res.json({
       income,
       expense,
-      balance
+      previousBalance,
+      balance: finalBalance
     });
 
   } catch (err) {
