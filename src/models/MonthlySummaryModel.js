@@ -36,6 +36,12 @@ const MonthlySummarySchema = new mongoose.Schema(
       default: 0,
     },
 
+    account: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Account",
+      default: null,
+    },
+
     closedAt: {
       type: Date,
       default: Date.now,
@@ -48,7 +54,7 @@ const MonthlySummarySchema = new mongoose.Schema(
 
 // 🔒 ensures 1 summary per month per user
 MonthlySummarySchema.index(
-  { user: 1, year: 1, month: 1 },
+  { user: 1, year: 1, month: 1, account: 1 },
   { unique: true }
 );
 

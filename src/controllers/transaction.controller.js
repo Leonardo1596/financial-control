@@ -80,12 +80,12 @@ export const getSummary = async (req, res) => {
       return res.status(401).json({ message: "Usuário não autenticado" });
     }
 
-    const userId = new mongoose.Types.ObjectId(req.userId);
     const { month, year, accountId } = req.query;
 
+    // ❌ removido: obrigatoriedade do accountId
     if (!month || !year) {
       return res.status(400).json({
-        message: "Mês e ano são obrigatórios"
+        message: "Mês e ano são obrigatórios",
       });
     }
 
@@ -94,25 +94,34 @@ export const getSummary = async (req, res) => {
 
     if (isNaN(m) || isNaN(y) || m < 1 || m > 12 || y < 2000) {
       return res.status(400).json({
-        message: "Período inválido"
+        message: "Período inválido",
       });
     }
 
+    const userId = new mongoose.Types.ObjectId(req.userId);
+
+    // 👇 só cria se existir accountId
+    const accountObjectId = accountId
+      ? new mongoose.Types.ObjectId(accountId)
+      : null;
+
+    // 📅 intervalo do mês atual
     const start = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0));
     const end = new Date(Date.UTC(y, m, 0, 23, 59, 59));
 
-    const match = {
+    // 🧠 filtro dinâmico
+    const matchFilter = {
       user: userId,
-      date: { $gte: start, $lte: end }
+      date: { $gte: start, $lte: end },
     };
 
-    if (accountId) {
-      match.accountId = new mongoose.Types.ObjectId(accountId);
+    if (accountObjectId) {
+      matchFilter.accountId = accountObjectId;
     }
 
-    // 🔥 calcula income e expense do mês
+    // 🔍 transações do mês atual
     const result = await Transaction.aggregate([
-      { $match: match },
+      { $match: matchFilter },
       {
         $group: {
           _id: "$type",
@@ -121,54 +130,86 @@ export const getSummary = async (req, res) => {
               $cond: [
                 { $eq: ["$type", "expense"] },
                 { $multiply: ["$amount", -1] },
-                "$amount"
-              ]
-            }
-          }
-        }
-      }
+                "$amount",
+              ],
+            },
+          },
+        },
+      },
     ]);
 
     let income = 0;
     let expense = 0;
 
-    result.forEach(item => {
+    result.forEach((item) => {
       if (item._id === "income") income = item.total;
       if (item._id === "expense") expense = Math.abs(item.total);
     });
 
-    // 🔥 pega saldo do mês anterior
+    // 🔥 mês anterior
     const prevMonth = m === 1 ? 12 : m - 1;
     const prevYear = m === 1 ? y - 1 : y;
 
-    const previousSummary = await MonthlySummary.findOne({
+    let previousBalance = 0;
+
+    // 🧠 filtro do summary anterior
+    const previousSummaryFilter = {
       user: userId,
       month: prevMonth,
       year: prevYear,
-      ...(accountId && { account: accountId })
-    });
+    };
 
-    const previousBalance = previousSummary?.balance || 0;
+    if (accountObjectId) {
+      previousSummaryFilter.account = accountObjectId;
+    }
 
-    // 💀 corrige ponto flutuante
+    const previousSummary = await MonthlySummary.findOne(previousSummaryFilter);
+
+    if (previousSummary) {
+      previousBalance = previousSummary.balance;
+    } else {
+      // 💀 fallback: tudo antes do mês atual
+      const pastMatchFilter = {
+        user: userId,
+        date: { $lt: start },
+      };
+
+      if (accountObjectId) {
+        pastMatchFilter.accountId = accountObjectId;
+      }
+
+      const pastTransactions = await Transaction.aggregate([
+        { $match: pastMatchFilter },
+        {
+          $group: {
+            _id: null,
+            total: {
+              $sum: {
+                $cond: [
+                  { $eq: ["$type", "expense"] },
+                  { $multiply: ["$amount", -1] },
+                  "$amount",
+                ],
+              },
+            },
+          },
+        },
+      ]);
+
+      previousBalance = pastTransactions[0]?.total || 0;
+    }
+
     const rawBalance = previousBalance + income - expense;
 
-    const balance = Number(rawBalance.toFixed(2));
-    const fixedIncome = Number(income.toFixed(2));
-    const fixedExpense = Number(expense.toFixed(2));
-    const fixedPreviousBalance = Number(previousBalance.toFixed(2));
-
     return res.json({
-      previousBalance: fixedPreviousBalance,
-      income: fixedIncome,
-      expense: fixedExpense,
-      balance
+      previousBalance: Number(previousBalance.toFixed(2)),
+      income: Number(income.toFixed(2)),
+      expense: Number(expense.toFixed(2)),
+      balance: Number(rawBalance.toFixed(2)),
     });
 
   } catch (err) {
-    console.error("Erro em getSummary:", err);
-    return res.status(500).json({
-      message: "Erro interno"
-    });
+    console.error(err);
+    return res.status(500).json({ message: "Erro interno" });
   }
 };
