@@ -38,11 +38,6 @@ const AccountPayableSchema = new mongoose.Schema({
     default: "fixa"
   },
 
-  recurring: {
-    type: Boolean,
-    default: false
-  },
-
   category: {
     type: String,
     default: "Geral"

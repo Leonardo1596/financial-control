@@ -15,7 +15,7 @@ function calculateStatus(account) {
   return "pendente";
 }
 
-// ✅ Criar conta(s) a pagar
+// ✅ Criar conta(s) a pagar (suporte a parcelas e recorrência)
 export async function create(req, res) {
   try {
     const {
@@ -25,7 +25,8 @@ export async function create(req, res) {
       type,
       recurring,
       category,
-      recurringMonths = 12
+      recurringMonths = 12,
+      installments = 1 // novo campo para parcelamento
     } = req.body;
 
     if (!description || !amount || !dueDate) {
@@ -35,20 +36,27 @@ export async function create(req, res) {
     const baseDueDate = new Date(dueDate);
     const accounts = [];
 
-    // conta principal
-    accounts.push({
-      userId: req.userId,
-      description,
-      amount,
-      dueDate: baseDueDate,
-      type: type || "fixa",
-      recurring: !!recurring,
-      category: category || "Geral"
-    });
+    for (let i = 0; i < installments; i++) {
+      const installmentDueDate = new Date(baseDueDate);
+      installmentDueDate.setMonth(baseDueDate.getMonth() + i);
 
-    // 🔁 contas futuras
+      // conta principal / parcela
+      accounts.push({
+        userId: req.userId,
+        description: installments > 1 ? `${description} - Parcela ${i + 1}/${installments}` : description,
+        amount,
+        dueDate: installmentDueDate,
+        type: type || "fixa",
+        recurring: false, // parcelas não são recorrentes
+        category: category || "Geral",
+        installmentNumber: installments > 1 ? i + 1 : null,
+        totalInstallments: installments > 1 ? installments : null
+      });
+    }
+
+    // 🔁 contas recorrentes (após parcelas)
     if (recurring) {
-      for (let i = 1; i < recurringMonths; i++) {
+      for (let i = installments; i < installments + recurringMonths; i++) {
         const nextDate = new Date(baseDueDate);
         nextDate.setMonth(baseDueDate.getMonth() + i);
 
@@ -59,7 +67,9 @@ export async function create(req, res) {
           dueDate: nextDate,
           type: type || "fixa",
           recurring: true,
-          category: category || "Geral"
+          category: category || "Geral",
+          installmentNumber: null,
+          totalInstallments: null
         });
       }
     }
