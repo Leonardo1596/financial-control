@@ -72,3 +72,32 @@ export const login = async (req, res) => {
     return res.status(500).json({ message: "Erro interno" });
   }
 };
+
+export const changePassword = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: "Dados incompletos" });
+    }
+
+    const user = await User.findById(userId).select("+password");
+    if (!user) {
+      return res.status(404).json({ message: "Usuário não encontrado" });
+    }
+
+    const passwordMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!passwordMatch) {
+      return res.status(401).json({ message: "Senha atual incorreta" });
+    }
+
+    const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedNewPassword;
+    await user.save();
+
+    return res.json({ message: "Senha alterada com sucesso" });
+  } catch (error) {
+    return res.status(500).json({ message: "Erro interno" });
+  }
+};

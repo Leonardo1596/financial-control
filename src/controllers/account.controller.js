@@ -1,6 +1,5 @@
 import AccountModel from '../models/AccountModel.js';
-import Transaction from '../models/TransactionModel.js';
-import mongoose from 'mongoose';
+import { calculateSummary } from "../utils/calculateSummary.js";
 
 // 🔥 CREATE ACCOUNT
 export async function create(req, res) {
@@ -47,62 +46,46 @@ export const deleteAccount = async (req, res) => {
 export const listAccounts = async (req, res) => {
   try {
     const userId = req.userId;
-    const userObjectId = new mongoose.Types.ObjectId(userId);
-
     const { month, year } = req.query;
+
+    if (!month || !year) {
+      return res.status(400).json({
+        message: "Mês e ano são obrigatórios",
+      });
+    }
 
     const m = Number(month);
     const y = Number(year);
 
-    const start = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0));
-    const end = new Date(Date.UTC(y, m, 0, 23, 59, 59));
+    if (isNaN(m) || isNaN(y) || m < 1 || m > 12 || y < 2000) {
+      return res.status(400).json({
+        message: "Período inválido",
+      });
+    }
 
     const accounts = await AccountModel.find({ userId }).sort({ name: 1 });
 
-    const balances = await Transaction.aggregate([
-      {
-        $match: {
-          user: userObjectId,
-          date: {
-            $gte: start,
-            $lte: end
-          }
-        }
-      },
-      {
-        $group: {
-          _id: "$accountId",
-          balance: {
-            $sum: {
-              $cond: [
-                { $eq: ["$type", "expense"] },
-                { $multiply: ["$amount", -1] },
-                "$amount"
-              ]
-            }
-          }
-        }
-      }
-    ]);
+    // 🧠 agora usa calculateSummary pra cada conta
+    const accountsWithBalance = await Promise.all(
+      accounts.map(async (acc) => {
+        const summary = await calculateSummary({
+          userId,
+          month,
+          year,
+          accountId: acc._id.toString(),
+        });
 
-    const balanceMap = {};
-    balances.forEach(b => {
-      balanceMap[b._id.toString()] = b.balance;
-    });
-
-    const accountsWithBalance = accounts.map(acc => {
-      const calculatedBalance = balanceMap[acc._id.toString()] || 0;
-
-      return {
-        ...acc.toObject(),
-        balance: calculatedBalance // 👈 agora NÃO soma com o acumulado antigo
-      };
-    });
+        return {
+          ...acc.toObject(),
+          balance: Number(summary.balance.toFixed(2)),
+        };
+      })
+    );
 
     return res.json(accountsWithBalance);
 
   } catch (err) {
-    console.error(err);
+    console.error("Erro no listAccounts:", err);
     return res.status(500).json({ message: "Erro interno" });
   }
 };

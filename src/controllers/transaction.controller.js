@@ -1,6 +1,5 @@
 import Transaction from "../models/TransactionModel.js";
-import MonthlySummary from "../models/MonthlySummaryModel.js";
-import mongoose from "mongoose";
+import { calculateSummary } from "../utils/calculateSummary.js";
 
 export const createTransaction = async (req, res) => {
   try {
@@ -82,7 +81,6 @@ export const getSummary = async (req, res) => {
 
     const { month, year, accountId } = req.query;
 
-    // ❌ removido: obrigatoriedade do accountId
     if (!month || !year) {
       return res.status(400).json({
         message: "Mês e ano são obrigatórios",
@@ -98,118 +96,23 @@ export const getSummary = async (req, res) => {
       });
     }
 
-    const userId = new mongoose.Types.ObjectId(req.userId);
-
-    // 👇 só cria se existir accountId
-    const accountObjectId = accountId
-      ? new mongoose.Types.ObjectId(accountId)
-      : null;
-
-    // 📅 intervalo do mês atual
-    const start = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0));
-    const end = new Date(Date.UTC(y, m, 0, 23, 59, 59));
-
-    // 🧠 filtro dinâmico
-    const matchFilter = {
-      user: userId,
-      date: { $gte: start, $lte: end },
-    };
-
-    if (accountObjectId) {
-      matchFilter.accountId = accountObjectId;
-    }
-
-    // 🔍 transações do mês atual
-    const result = await Transaction.aggregate([
-      { $match: matchFilter },
-      {
-        $group: {
-          _id: "$type",
-          total: {
-            $sum: {
-              $cond: [
-                { $eq: ["$type", "expense"] },
-                { $multiply: ["$amount", -1] },
-                "$amount",
-              ],
-            },
-          },
-        },
-      },
-    ]);
-
-    let income = 0;
-    let expense = 0;
-
-    result.forEach((item) => {
-      if (item._id === "income") income = item.total;
-      if (item._id === "expense") expense = Math.abs(item.total);
+    // 🧠 agora delega tudo pra função reutilizável
+    const summary = await calculateSummary({
+      userId: req.userId,
+      month,
+      year,
+      accountId,
     });
 
-    // 🔥 mês anterior
-    const prevMonth = m === 1 ? 12 : m - 1;
-    const prevYear = m === 1 ? y - 1 : y;
-
-    let previousBalance = 0;
-
-    // 🧠 filtro do summary anterior
-    const previousSummaryFilter = {
-      user: userId,
-      month: prevMonth,
-      year: prevYear,
-    };
-
-    if (accountObjectId) {
-      previousSummaryFilter.account = accountObjectId;
-    }
-
-    const previousSummary = await MonthlySummary.findOne(previousSummaryFilter);
-
-    if (previousSummary) {
-      previousBalance = previousSummary.balance;
-    } else {
-      // 💀 fallback: tudo antes do mês atual
-      const pastMatchFilter = {
-        user: userId,
-        date: { $lt: start },
-      };
-
-      if (accountObjectId) {
-        pastMatchFilter.accountId = accountObjectId;
-      }
-
-      const pastTransactions = await Transaction.aggregate([
-        { $match: pastMatchFilter },
-        {
-          $group: {
-            _id: null,
-            total: {
-              $sum: {
-                $cond: [
-                  { $eq: ["$type", "expense"] },
-                  { $multiply: ["$amount", -1] },
-                  "$amount",
-                ],
-              },
-            },
-          },
-        },
-      ]);
-
-      previousBalance = pastTransactions[0]?.total || 0;
-    }
-
-    const rawBalance = previousBalance + income - expense;
-
     return res.json({
-      previousBalance: Number(previousBalance.toFixed(2)),
-      income: Number(income.toFixed(2)),
-      expense: Number(expense.toFixed(2)),
-      balance: Number(rawBalance.toFixed(2)),
+      previousBalance: Number(summary.previousBalance.toFixed(2)),
+      income: Number(summary.income.toFixed(2)),
+      expense: Number(summary.expense.toFixed(2)),
+      balance: Number(summary.balance.toFixed(2)),
     });
 
   } catch (err) {
-    console.error(err);
+    console.error("Erro no getSummary:", err);
     return res.status(500).json({ message: "Erro interno" });
   }
 };
