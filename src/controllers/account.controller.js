@@ -43,6 +43,28 @@ export const deleteAccount = async (req, res) => {
   }
 };
 
+export const updateAccount = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name } = req.body;
+
+    const account = await AccountModel.findOneAndUpdate(
+      { _id: id, userId: req.userId },
+      { name },
+      { new: true }
+    );
+
+    if (!account) {
+      return res.status(404).json({ message: "Conta não encontrada" });
+    }
+
+    return res.json(account);
+  } catch (err) {
+    console.error("Erro no updateAccount:", err);
+    return res.status(500).json({ message: "Erro interno" });
+  }
+}
+
 export const listAccounts = async (req, res) => {
   try {
     const userId = req.userId;
