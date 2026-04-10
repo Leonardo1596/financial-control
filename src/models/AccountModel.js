@@ -7,7 +7,7 @@ const AccountSchema = new mongoose.Schema({
     },
     balance: {
         type: Number,
-        required: true
+        required: false
     },
     userId: {
         type: mongoose.Schema.Types.ObjectId,
