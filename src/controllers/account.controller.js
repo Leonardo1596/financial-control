@@ -6,7 +6,7 @@ export async function create(req, res) {
   try {
     const { name, balance } = req.body;
 
-    if (!name || balance === undefined) {
+    if (!name) {
       return res.status(400).json({ error: "Campos obrigatórios faltando" });
     }
 
