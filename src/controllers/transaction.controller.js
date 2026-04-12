@@ -116,3 +116,22 @@ export const getSummary = async (req, res) => {
     return res.status(500).json({ message: "Erro interno" });
   }
 };
+
+export const filterTransactionsByName = async (req, res) => {
+  try {
+    const { name } = req.query;
+
+    if (!name) {
+      return res.status(400).json({ message: "Nome é obrigatório" });
+    }
+
+    const transactions = await Transaction.find({
+      user: req.userId,
+      description: { $regex: name, $options: "i" }
+    }).sort({ date: -1 });
+
+    return res.json(transactions);
+  } catch (err) {
+    return res.status(500).json({ message: "Erro interno" });
+  }
+}

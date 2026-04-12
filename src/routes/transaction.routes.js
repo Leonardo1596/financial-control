@@ -5,7 +5,8 @@ import {
   listTransactions,
   deleteTransaction,
   deleteAllTransactions,
-  getSummary
+  getSummary,
+  filterTransactionsByName
 } from "../controllers/transaction.controller.js";
 
 const router = Router();
@@ -15,6 +16,7 @@ router.get("/list-transaction", authMiddleware, listTransactions);
 router.delete("/delete-transaction/:id", authMiddleware, deleteTransaction);
 router.delete("/delete-all-transactions", authMiddleware, deleteAllTransactions);
 router.get("/summary", authMiddleware, getSummary);
+router.get("/filter-transactions-by-name", authMiddleware, filterTransactionsByName);
 
 
 export default router;
