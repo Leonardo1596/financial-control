@@ -57,6 +57,26 @@ export const createPendingTransaction = async (req, res) => {
   }
 };
 
+export const getPendingTransactionById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const pending = await PendingTransaction.findOne({
+      _id: id,
+      user: req.userId
+    });
+
+    if (!pending) {
+      return res.status(404).json({ message: "Pending não encontrado" });
+    }
+
+    return res.json(pending);
+  } catch (err) {
+    console.error("Erro getPendingTransactionById:", err);
+    return res.status(500).json({ message: "Erro interno" });
+  }
+};
+
 // =========================
 // 📥 LIST PENDING (opcional)
 // =========================
