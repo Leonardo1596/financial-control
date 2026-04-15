@@ -33,22 +33,49 @@ export const createTransaction = async (req, res) => {
 // =========================
 export const createPendingTransaction = async (req, res) => {
   try {
-    const { type, description, amount, source } = req.body;
+    let { type, description, amount, source } = req.body;
 
-    if (!type || !description || !amount || !source) {
+    if (!description || !amount || !source) {
       return res.status(400).json({ message: "Dados incompletos" });
+    }
+
+    // 🔥 NORMALIZA TYPE (não confia no Android, ele não é seu amigo)
+    const text = (description || "").toLowerCase();
+
+    const incomeKeywords = [
+      "recebido",
+      "recebeu",
+      "entrada",
+      "creditou",
+      "pix recebido",
+      "você recebeu",
+      "transferência recebida"
+    ];
+
+    const isIncome = incomeKeywords.some(k => text.includes(k));
+
+    type = type
+      ? type
+      : isIncome
+        ? "income"
+        : "expense";
+
+    // 🔥 garante number válido
+    const numericAmount = Number(amount);
+
+    if (isNaN(numericAmount) || numericAmount <= 0) {
+      return res.status(400).json({ message: "Valor inválido" });
     }
 
     const pending = await PendingTransaction.create({
       user: req.userId,
       type,
       description,
-      amount,
+      amount: numericAmount,
       source,
       createdAt: new Date()
     });
 
-    // 🔥 ISSO AQUI É O MAIS IMPORTANTE DO SEU DIA
     return res.status(201).json(pending);
 
   } catch (err) {
