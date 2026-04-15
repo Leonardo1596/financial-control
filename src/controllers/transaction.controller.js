@@ -7,7 +7,14 @@ import { calculateSummary } from "../utils/calculateSummary.js";
 // =========================
 export const createTransaction = async (req, res) => {
   try {
-    const { type, description, amount, date, accountId } = req.body;
+    const {
+      type,
+      description,
+      amount,
+      date,
+      accountId,
+      pendingId // 🔥 novo campo
+    } = req.body;
 
     if (!type || !description || !amount || !accountId) {
       return res.status(400).json({ message: "Dados incompletos" });
@@ -22,8 +29,17 @@ export const createTransaction = async (req, res) => {
       date
     });
 
+    // 🔥 APAGA PENDING SE EXISTIR
+    if (pendingId) {
+      await PendingTransaction.findOneAndDelete({
+        _id: pendingId,
+        user: req.userId
+      });
+    }
+
     return res.status(201).json(transaction);
   } catch (err) {
+    console.error("Erro createTransaction:", err);
     return res.status(500).json({ message: "Erro interno" });
   }
 };
