@@ -73,7 +73,7 @@ export const createPendingTransaction = async (req, res) => {
       description,
       amount: numericAmount,
       source,
-      createdAt: new Date()
+      createdAt: date ? new Date(date) : new Date()
     });
 
     return res.status(201).json(pending);
