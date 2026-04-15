@@ -1,6 +1,10 @@
 import Transaction from "../models/TransactionModel.js";
+import PendingTransaction from "../models/PendingTransactionModel.js"; // 🔥 NOVO
 import { calculateSummary } from "../utils/calculateSummary.js";
 
+// =========================
+// 🟢 CREATE NORMAL
+// =========================
 export const createTransaction = async (req, res) => {
   try {
     const { type, description, amount, date, accountId } = req.body;
@@ -24,6 +28,89 @@ export const createTransaction = async (req, res) => {
   }
 };
 
+// =========================
+// 🔥 CREATE PENDING (NOVO)
+// =========================
+export const createPendingTransaction = async (req, res) => {
+  try {
+    const { type, description, amount, source } = req.body;
+
+    if (!type || !description || !amount || !source) {
+      return res.status(400).json({ message: "Dados incompletos" });
+    }
+
+    const pending = await PendingTransaction.create({
+      user: req.userId,
+      type,
+      description,
+      amount,
+      source,
+      createdAt: new Date()
+    });
+
+    // 🔥 ISSO AQUI É O MAIS IMPORTANTE DO SEU DIA
+    return res.status(201).json(pending);
+
+  } catch (err) {
+    console.error("Erro createPendingTransaction:", err);
+    return res.status(500).json({ message: "Erro interno" });
+  }
+};
+
+// =========================
+// 📥 LIST PENDING (opcional)
+// =========================
+export const listPendingTransactions = async (req, res) => {
+  try {
+    const pendings = await PendingTransaction.find({
+      user: req.userId
+    }).sort({ createdAt: -1 });
+
+    return res.json(pendings);
+  } catch (err) {
+    return res.status(500).json({ message: "Erro interno" });
+  }
+};
+
+// =========================
+// ✅ CONFIRMAR PENDING
+// =========================
+export const confirmPendingTransaction = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { accountId, date } = req.body;
+
+    const pending = await PendingTransaction.findOne({
+      _id: id,
+      user: req.userId
+    });
+
+    if (!pending) {
+      return res.status(404).json({ message: "Pending não encontrado" });
+    }
+
+    const transaction = await Transaction.create({
+      user: req.userId,
+      type: pending.type,
+      description: pending.description,
+      amount: pending.amount,
+      accountId,
+      date: date || new Date()
+    });
+
+    await PendingTransaction.deleteOne({ _id: id });
+
+    return res.json(transaction);
+
+  } catch (err) {
+    console.error("Erro confirmPending:", err);
+    return res.status(500).json({ message: "Erro interno" });
+  }
+};
+
+// =========================
+// 🧾 LIST
+// =========================
 export const listTransactions = async (req, res) => {
   try {
     const transactions = await Transaction.find({
@@ -36,6 +123,9 @@ export const listTransactions = async (req, res) => {
   }
 };
 
+// =========================
+// ❌ DELETE
+// =========================
 export const deleteTransaction = async (req, res) => {
   try {
     const { id } = req.params;
@@ -55,6 +145,9 @@ export const deleteTransaction = async (req, res) => {
   }
 };
 
+// =========================
+// ❌ DELETE ALL
+// =========================
 export const deleteAllTransactions = async (req, res) => {
   try {
     const userId = req.userId;
@@ -73,6 +166,9 @@ export const deleteAllTransactions = async (req, res) => {
   }
 };
 
+// =========================
+// 📊 SUMMARY
+// =========================
 export const getSummary = async (req, res) => {
   try {
     if (!req.userId) {
@@ -96,7 +192,6 @@ export const getSummary = async (req, res) => {
       });
     }
 
-    // 🧠 agora delega tudo pra função reutilizável
     const summary = await calculateSummary({
       userId: req.userId,
       month,
@@ -117,6 +212,9 @@ export const getSummary = async (req, res) => {
   }
 };
 
+// =========================
+// 🔍 FILTER
+// =========================
 export const filterTransactionsByName = async (req, res) => {
   try {
     const { name } = req.query;
@@ -134,4 +232,4 @@ export const filterTransactionsByName = async (req, res) => {
   } catch (err) {
     return res.status(500).json({ message: "Erro interno" });
   }
-}
+};
