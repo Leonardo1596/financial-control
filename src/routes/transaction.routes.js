@@ -3,6 +3,7 @@ import { authMiddleware } from "../middlewares/authMiddleware.js";
 import {
   createTransaction,
   createPendingTransaction,
+  listPendingTransactions,
   listTransactions,
   deleteTransaction,
   deleteAllTransactions,
@@ -14,6 +15,7 @@ const router = Router();
 
 router.post("/create-transaction", authMiddleware, createTransaction);
 router.post("/pending-transactions", authMiddleware, createPendingTransaction);
+router.get("/pending-transactions", authMiddleware, listPendingTransactions);
 router.get("/list-transaction", authMiddleware, listTransactions);
 router.delete("/delete-transaction/:id", authMiddleware, deleteTransaction);
 router.delete("/delete-all-transactions", authMiddleware, deleteAllTransactions);
