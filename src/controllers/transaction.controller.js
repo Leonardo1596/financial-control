@@ -49,7 +49,7 @@ export const createTransaction = async (req, res) => {
 // =========================
 export const createPendingTransaction = async (req, res) => {
   try {
-    let { type, description, amount, source } = req.body;
+    let { type, description, amount, source, accountId } = req.body;
 
     if (!description || !amount || !source) {
       return res.status(400).json({ message: "Dados incompletos" });
@@ -89,6 +89,7 @@ export const createPendingTransaction = async (req, res) => {
       description,
       amount: numericAmount,
       source,
+      accountId,
       createdAt: new Date()
     });
 

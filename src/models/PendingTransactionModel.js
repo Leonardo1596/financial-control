@@ -23,6 +23,11 @@ const PendingTransactionSchema = new mongoose.Schema({
     type: String, // ex: "nubank", "rico"
     required: true
   },
+  accountId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Account",
+    required: true
+  },
   createdAt: {
     type: Date,
     default: Date.now
