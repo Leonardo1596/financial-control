@@ -14,27 +14,48 @@ export const createTransaction = async (req, res) => {
       amount,
       date,
       accountId,
-      categoryId, // 🔥 novo campo
+      categoryId,
       pendingId
     } = req.body;
 
-    if (!type || !description || !amount || !accountId || !categoryId) {
+    if (!type || !description || !amount || !accountId) {
       return res.status(400).json({ message: "Dados incompletos" });
     }
 
-    // 🔥 valida se a categoria pertence ao usuário ou é padrão
-    const category = await Category.findOne({
-      _id: categoryId,
-      $or: [
-        { isDefault: true },
-        { userId: req.userId }
-      ]
-    });
+    let finalCategoryId = categoryId;
 
-    if (!category) {
-      return res.status(400).json({
-        message: "Categoria inválida"
+    // 🔥 se não veio categoria, usa fallback
+    if (!finalCategoryId) {
+      const fallbackName = type === "income" ? "Outross" : "Outros";
+
+      const fallbackCategory = await Category.findOne({
+        name: fallbackName,
+        type,
+        isDefault: true
       });
+
+      if (!fallbackCategory) {
+        return res.status(500).json({
+          message: "Categoria padrão não encontrada"
+        });
+      }
+
+      finalCategoryId = fallbackCategory._id;
+    } else {
+      // 🔥 valida se a categoria pertence ao usuário ou é padrão
+      const category = await Category.findOne({
+        _id: finalCategoryId,
+        $or: [
+          { isDefault: true },
+          { userId: req.userId }
+        ]
+      });
+
+      if (!category) {
+        return res.status(400).json({
+          message: "Categoria inválida"
+        });
+      }
     }
 
     const transaction = await Transaction.create({
@@ -43,7 +64,7 @@ export const createTransaction = async (req, res) => {
       description,
       amount,
       accountId,
-      categoryId,
+      categoryId: finalCategoryId,
       date
     });
 
@@ -54,7 +75,9 @@ export const createTransaction = async (req, res) => {
         user: req.userId
       });
     }
+
     console.log("Transação criada:", transaction);
+
     return res.status(201).json(transaction);
   } catch (err) {
     console.error("Erro createTransaction:", err);
