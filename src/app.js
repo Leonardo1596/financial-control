@@ -2,6 +2,7 @@ import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 import { connectDatabase } from "./config/database.js";
+import { seedCategories } from "./seeds/category.seed.js";
 dotenv.config();
 const app = express();
 app.use(express.json());
@@ -14,6 +15,7 @@ import uploadRoutes from "./routes/upload.routes.js";
 import recordRoutes from "./routes/record.routes.js";
 import accountPayableRoutes from "./routes/accountPayable.routes.js";
 import accountRoutes from "./routes/account.routes.js";
+import categoryRoutes from "./routes/category.routes.js";
 
 // Use routes
 app.use(authRoutes);
@@ -22,9 +24,12 @@ app.use(uploadRoutes);
 app.use(recordRoutes);
 app.use(accountPayableRoutes);
 app.use(accountRoutes);
+app.use(categoryRoutes);
 
 // conecta no banco
 connectDatabase();
+
+await seedCategories();
 
 app.get("/", (req, res) => {
   res.send("Finance Control API rodando com MongoDB 😎");
