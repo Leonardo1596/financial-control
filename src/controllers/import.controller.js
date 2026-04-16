@@ -2,6 +2,7 @@ import fs from "fs";
 import csv from "csv-parser";
 import { Readable } from "stream";
 import Transaction from "../models/TransactionModel.js";
+import Category from "../models/CategoryModel.js"; // 🔥 ADICIONADO
 
 function normalizeKey(key) {
   return key
@@ -165,13 +166,37 @@ export async function importCSV(req, res) {
       return !existingSet.has(key);
     });
 
-    if (uniqueTransactions.length > 0) {
-      await Transaction.insertMany(uniqueTransactions);
+    // 🔥 ADICIONADO: buscar categorias padrão
+    const defaultCategories = await Category.find({ isDefault: true });
+
+    const categoryMap = {
+      expense: defaultCategories.find(
+        (c) => c.name === "Outros" && c.type === "expense"
+      ),
+      income: defaultCategories.find(
+        (c) => c.name === "Outross" && c.type === "income"
+      ),
+    };
+
+    if (!categoryMap.expense || !categoryMap.income) {
+      return res.status(500).json({
+        message: "Categorias padrão não encontradas",
+      });
+    }
+
+    // 🔥 ADICIONADO: inserir categoryId
+    const uniqueTransactionsWithCategory = uniqueTransactions.map((t) => ({
+      ...t,
+      categoryId: categoryMap[t.type]._id,
+    }));
+
+    if (uniqueTransactionsWithCategory.length > 0) {
+      await Transaction.insertMany(uniqueTransactionsWithCategory);
     }
 
     return res.json({
       message: "Importação concluída",
-      total: uniqueTransactions.length,
+      total: uniqueTransactionsWithCategory.length,
     });
   } catch (err) {
     console.error("Error importing CSV:", err);
