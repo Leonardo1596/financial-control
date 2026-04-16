@@ -54,7 +54,7 @@ export const createTransaction = async (req, res) => {
         user: req.userId
       });
     }
-
+    console.log("Transação criada:", transaction);
     return res.status(201).json(transaction);
   } catch (err) {
     console.error("Erro createTransaction:", err);
