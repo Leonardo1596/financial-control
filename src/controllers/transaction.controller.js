@@ -1,5 +1,6 @@
 import Transaction from "../models/TransactionModel.js";
-import PendingTransaction from "../models/PendingTransactionModel.js"; // 🔥 NOVO
+import PendingTransaction from "../models/PendingTransactionModel.js";
+import Category from "../models/CategoryModel.js";
 import { calculateSummary } from "../utils/calculateSummary.js";
 
 // =========================
@@ -13,11 +14,27 @@ export const createTransaction = async (req, res) => {
       amount,
       date,
       accountId,
-      pendingId // 🔥 novo campo
+      categoryId, // 🔥 novo campo
+      pendingId
     } = req.body;
 
-    if (!type || !description || !amount || !accountId) {
+    if (!type || !description || !amount || !accountId || !categoryId) {
       return res.status(400).json({ message: "Dados incompletos" });
+    }
+
+    // 🔥 valida se a categoria pertence ao usuário ou é padrão
+    const category = await Category.findOne({
+      _id: categoryId,
+      $or: [
+        { isDefault: true },
+        { userId: req.userId }
+      ]
+    });
+
+    if (!category) {
+      return res.status(400).json({
+        message: "Categoria inválida"
+      });
     }
 
     const transaction = await Transaction.create({
@@ -26,6 +43,7 @@ export const createTransaction = async (req, res) => {
       description,
       amount,
       accountId,
+      categoryId,
       date
     });
 
@@ -179,10 +197,13 @@ export const listTransactions = async (req, res) => {
   try {
     const transactions = await Transaction.find({
       user: req.userId
-    }).sort({ date: -1 });
+    })
+      .populate("categoryId", "name icon color")
+      .sort({ date: -1 });
 
     return res.json(transactions);
   } catch (err) {
+    console.log(err);
     return res.status(500).json({ message: "Erro interno" });
   }
 };

@@ -24,16 +24,21 @@ const transactionSchema = new mongoose.Schema(
       type: Date,
       default: Date.now
     },
+    categoryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Category",
+      required: true,
+    },
     externalId: String,
     source: {
       type: String,
       enum: ["nubank", "mercadopago", "manual", "ofx"]
     },
     accountId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Account',
-    required: true
-  }
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Account',
+      required: true
+    }
   },
   { timestamps: true }
 );
