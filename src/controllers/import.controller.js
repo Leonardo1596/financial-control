@@ -171,14 +171,15 @@ export async function importCSV(req, res) {
 
     const categoryMap = {
       expense: defaultCategories.find(
-        (c) => c.name === "Outros" && c.type === "expense"
+        (c) => c.name === "outros" && c.type === "expense"
       ),
       income: defaultCategories.find(
-        (c) => c.name === "Outross" && c.type === "income"
+        (c) => c.name === "outross" && c.type === "income"
       ),
     };
 
     if (!categoryMap.expense || !categoryMap.income) {
+      console.error(categoryMap);
       return res.status(500).json({
         message: "Categorias padrão não encontradas",
       });
