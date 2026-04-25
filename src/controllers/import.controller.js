@@ -171,10 +171,10 @@ export async function importCSV(req, res) {
 
     const categoryMap = {
       expense: defaultCategories.find(
-        (c) => c.name === "outros" && c.type === "expense"
+        (c) => c.name.toLowerCase() === "outros" && c.type === "expense"
       ),
       income: defaultCategories.find(
-        (c) => c.name === "outross" && c.type === "income"
+        (c) => c.name.toLowerCase() === "outros" && c.type === "income"
       ),
     };
 
@@ -202,7 +202,7 @@ export async function importCSV(req, res) {
   } catch (err) {
     console.error("Error importing CSV:", err);
     return res.status(500).json({
-      message: "Erro ao importar arquivo",
+      message: err.message,
     });
   }
 }
