@@ -16,6 +16,7 @@ import recordRoutes from "./routes/record.routes.js";
 import accountPayableRoutes from "./routes/accountPayable.routes.js";
 import accountRoutes from "./routes/account.routes.js";
 import categoryRoutes from "./routes/category.routes.js";
+import goalRoutes from "./routes/goal.routes.js";
 
 // Use routes
 app.use(authRoutes);
@@ -25,6 +26,7 @@ app.use(recordRoutes);
 app.use(accountPayableRoutes);
 app.use(accountRoutes);
 app.use(categoryRoutes);
+app.use(goalRoutes);
 
 // conecta no banco
 connectDatabase();

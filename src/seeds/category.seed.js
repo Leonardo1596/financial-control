@@ -6,6 +6,7 @@ const defaultCategories = [
   { name: "Lazer", type: "expense", isDefault: true },
   { name: "Salário", type: "income", isDefault: true },
   { name: "Outros", type: "expense", isDefault: true },
+  { name: "Saúde", type: "expense", isDefault: true },
   { name: "Outros", type: "income", isDefault: true },
   { name: "Serviços", type: "expense", isDefault: true }
 ];
