@@ -218,13 +218,59 @@ export const confirmPendingTransaction = async (req, res) => {
 // =========================
 export const listTransactions = async (req, res) => {
   try {
-    const transactions = await Transaction.find({
-      user: req.userId
-    })
-      .populate("categoryId", "name icon color")
-      .sort({ date: -1 });
+    const {
+      page = 1,
+      limit = 10,
+      search = "",
+      month,
+      year,
+      accountId
+    } = req.query;
 
-    return res.json(transactions);
+    const skip = (page - 1) * limit;
+
+    const filter = {
+      user: req.userId
+    };
+
+    // 🔍 busca por descrição
+    if (search) {
+      filter.description = { $regex: search, $options: "i" };
+    }
+
+    // 📅 filtro por data
+    if (month && year && month !== "todas" && year !== "todas") {
+      const start = new Date(year, month - 1, 1);
+      const end = new Date(year, month, 0);
+
+      filter.date = {
+        $gte: start,
+        $lte: end
+      };
+    }
+
+    // 🏦 filtro por conta
+    if (accountId && accountId !== "todas") {
+      filter.accountId = accountId;
+    }
+
+    const [transactions, total] = await Promise.all([
+      Transaction.find(filter)
+        .populate("categoryId", "name icon color")
+        .sort({ date: -1 })
+        .skip(skip)
+        .limit(Number(limit)),
+
+      Transaction.countDocuments(filter)
+    ]);
+
+    return res.json({
+      data: transactions,
+      page: Number(page),
+      totalPages: Math.ceil(total / limit),
+      totalItems: total
+    });
+
   } catch (err) {
     console.log(err);
     return res.status(500).json({ message: "Erro interno" });
@@ -323,21 +369,21 @@ export const getSummary = async (req, res) => {
 // =========================
 // 🔍 FILTER
 // =========================
-export const filterTransactionsByName = async (req, res) => {
-  try {
-    const { name } = req.query;
+// export const filterTransactionsByName = async (req, res) => {
+//   try {
+//     const { name } = req.query;
 
-    if (!name) {
-      return res.status(400).json({ message: "Nome é obrigatório" });
-    }
+//     if (!name) {
+//       return res.status(400).json({ message: "Nome é obrigatório" });
+//     }
 
-    const transactions = await Transaction.find({
-      user: req.userId,
-      description: { $regex: name, $options: "i" }
-    }).sort({ date: -1 });
+//     const transactions = await Transaction.find({
+//       user: req.userId,
+//       description: { $regex: name, $options: "i" }
+//     }).sort({ date: -1 });
 
-    return res.json(transactions);
-  } catch (err) {
-    return res.status(500).json({ message: "Erro interno" });
-  }
-};
+//     return res.json(transactions);
+//   } catch (err) {
+//     return res.status(500).json({ message: "Erro interno" });
+//   }
+// };
